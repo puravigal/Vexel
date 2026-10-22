@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Vexel — Visual Website Editor",
+  "version": "0.1.0",
+  "description": "Select webpage elements and preview visual edits directly in the browser.",
+  "permissions": ["activeTab", "sidePanel", "storage"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "side_panel": { "default_path": "sidepanel.html" },
+  "action": { "default_title": "Open Vexel visual editor" },
+  "content_scripts": [{
+    "matches": ["http://*/*", "https://*/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle"
+  }]
+}
