@@ -15,18 +15,15 @@ let pickerActive = false;
 let selectedElement: HTMLElement | null = null;
 let hoverElement: HTMLElement | null = null;
 let overlay: HTMLDivElement | null = null;
+let sourceTextSnapshot: string | null = null;
 
 function selectorFor(el: HTMLElement): string {
   const parts: string[] = [];
   let node: HTMLElement | null = el;
   while (node && node !== document.body && parts.length < 5) {
     let part = node.tagName.toLowerCase();
-    if (node.id) {
-      part += `#${CSS.escape(node.id)}`;
-      parts.unshift(part);
-      break;
-    }
-    const classes = typeof node.className === "string" ? node.className.trim().split(/\s+/).filter(Boolean).slice(0, 2) : [];
+    if (node.id) { parts.unshift(`${part}#${CSS.escape(node.id)}`); break; }
+    const classes = typeof node.className === "string" ? node.className.trim().split(/\\s+/).filter(Boolean).slice(0, 2) : [];
     part += classes.map((name) => `.${CSS.escape(name)}`).join("");
     const parent = node.parentElement;
     if (parent) {
@@ -38,12 +35,10 @@ function selectorFor(el: HTMLElement): string {
   }
   return parts.join(" > ") || el.tagName.toLowerCase();
 }
-
 function ensureTargetId(el: HTMLElement): string {
   if (!el.dataset.vexelTarget) el.dataset.vexelTarget = makeId();
   return el.dataset.vexelTarget;
 }
-
 function sendSelected(el: HTMLElement): void {
   selectedElement = el;
   const targetId = ensureTargetId(el);
@@ -65,7 +60,6 @@ function sendSelected(el: HTMLElement): void {
   chrome.runtime.sendMessage({ type: "VEXEL_ELEMENT_SELECTED", element }).catch(() => undefined);
   renderOverlay(el, "selected");
 }
-
 function renderOverlay(el: HTMLElement, mode: "hover" | "selected"): void {
   if (!overlay || !overlay.isConnected) {
     overlay = document.createElement("div");
@@ -81,7 +75,6 @@ function renderOverlay(el: HTMLElement, mode: "hover" | "selected"): void {
     background: mode === "selected" ? "rgba(124,92,255,.06)" : "rgba(50,214,197,.06)"
   });
 }
-
 function onPointerMove(event: PointerEvent): void {
   if (!pickerActive) return;
   const target = event.target;
@@ -89,22 +82,20 @@ function onPointerMove(event: PointerEvent): void {
   hoverElement = target;
   renderOverlay(target, "hover");
 }
-
 function onPickerClick(event: MouseEvent): void {
   if (!pickerActive) return;
   const target = event.target;
   if (!(target instanceof HTMLElement) || target.id === "vexel-selection-overlay") return;
-  // Capture the click before the page's handlers so selecting a button won't activate it.
   event.preventDefault();
   event.stopImmediatePropagation();
   event.stopPropagation();
   pickerActive = false;
   document.removeEventListener("pointermove", onPointerMove, true);
   document.removeEventListener("click", onPickerClick, true);
+  document.getElementById("vexel-picker-style")?.remove();
   sendSelected(target);
   chrome.runtime.sendMessage({ type: "VEXEL_PICKER_STOPPED" }).catch(() => undefined);
 }
-
 function startPicker(): void {
   pickerActive = true;
   document.addEventListener("pointermove", onPointerMove, true);
@@ -117,7 +108,6 @@ function startPicker(): void {
   }
   style.textContent = "html,html *{cursor:crosshair!important}";
 }
-
 function stopPicker(): void {
   pickerActive = false;
   document.removeEventListener("pointermove", onPointerMove, true);
@@ -126,11 +116,9 @@ function stopPicker(): void {
   overlay?.remove();
   overlay = null;
 }
-
 function targetFor(id: string): HTMLElement | null {
   return document.querySelector<HTMLElement>(`[${VEXEL_ID}="${CSS.escape(id)}"]`);
 }
-
 function applyStyle(targetId: string, property: EditableStyleProperty, value: string): void {
   const el = targetFor(targetId);
   if (!el) return;
@@ -140,18 +128,20 @@ function applyStyle(targetId: string, property: EditableStyleProperty, value: st
   chrome.runtime.sendMessage({ type: "VEXEL_CHANGE_APPLIED", changeCount: changes.length }).catch(() => undefined);
   if (el === selectedElement) sendSelected(el);
 }
-
 function applyText(targetId: string, value: string): void {
   const el = targetFor(targetId);
   if (!el) return;
+  // Container replacement removes descendants; limit text editing to leaf-like elements as a safety guard.
+  if (el.children.length > 0) {
+    chrome.runtime.sendMessage({ type: "VEXEL_ERROR", message: "For safety, text can only be edited on elements without child elements. Select the text or leaf element instead." }).catch(() => undefined);
+    return;
+  }
   const previousValue = el.textContent ?? "";
-  // Use textContent (not innerHTML) so user text can never be interpreted as markup.
   el.textContent = value;
   changes.push({ id: makeId(), targetId, operation: "set-text", previousValue, value });
   chrome.runtime.sendMessage({ type: "VEXEL_CHANGE_APPLIED", changeCount: changes.length }).catch(() => undefined);
   if (el === selectedElement) sendSelected(el);
 }
-
 function undo(): void {
   const change = changes.pop();
   if (!change) return;
@@ -162,7 +152,6 @@ function undo(): void {
   chrome.runtime.sendMessage({ type: "VEXEL_CHANGE_APPLIED", changeCount: changes.length }).catch(() => undefined);
   if (el === selectedElement) sendSelected(el);
 }
-
 function reset(): void {
   for (const [targetId, original] of originalStyles) {
     const el = targetFor(targetId);
@@ -174,7 +163,7 @@ function reset(): void {
       else el.style.removeProperty(cssName);
     }
     const text = originalTexts.get(targetId);
-    if (text !== undefined) el.textContent = text;
+    if (text !== undefined && el.children.length === 0) el.textContent = text;
   }
   changes.length = 0;
   originalStyles.clear();
@@ -182,7 +171,6 @@ function reset(): void {
   chrome.runtime.sendMessage({ type: "VEXEL_RESET_DONE" }).catch(() => undefined);
   if (selectedElement?.isConnected) sendSelected(selectedElement);
 }
-
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === "VEXEL_START_PICKER") startPicker();
   if (message?.type === "VEXEL_STOP_PICKER") stopPicker();
@@ -193,11 +181,8 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === "VEXEL_UNDO") undo();
   if (message?.type === "VEXEL_RESET") reset();
 });
-
 window.addEventListener("scroll", () => {
   if (selectedElement?.isConnected) renderOverlay(selectedElement, "selected");
   else if (hoverElement?.isConnected && pickerActive) renderOverlay(hoverElement, "hover");
 }, true);
-window.addEventListener("resize", () => {
-  if (selectedElement?.isConnected) renderOverlay(selectedElement, "selected");
-}, true);
+window.addEventListener("resize", () => { if (selectedElement?.isConnected) renderOverlay(selectedElement, "selected"); }, true);
