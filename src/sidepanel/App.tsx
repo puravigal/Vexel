@@ -45,6 +45,7 @@ export default function App() {
         setChangeState(defaults);
         setStatus("Preview reset");
       }
+      if (message?.type === "VEXEL_ERROR" && typeof message.message === "string") setStatus(message.message);
     };
     chrome.runtime.onMessage.addListener(listener);
     return () => chrome.runtime.onMessage.removeListener(listener);
