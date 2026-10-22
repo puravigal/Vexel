@@ -15,7 +15,6 @@ let pickerActive = false;
 let selectedElement: HTMLElement | null = null;
 let hoverElement: HTMLElement | null = null;
 let overlay: HTMLDivElement | null = null;
-let sourceTextSnapshot: string | null = null;
 
 function selectorFor(el: HTMLElement): string {
   const parts: string[] = [];
